@@ -1,0 +1,750 @@
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <assert.h>
+
+#include "dsml.h"
+#include "util.h"
+
+enum dsml_status dsml_parser_init(struct dsml_parser* parser) {
+    if (parser == NULL) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    parser->state_list_cap = INIT_CAP;
+    parser->state_list_size = 0;
+
+    parser->input_list_cap = INIT_CAP;
+    parser->input_list_size = 0;
+
+    parser->output_list_cap = INIT_CAP;
+    parser->output_list_size = 0;
+
+    parser->trans_list_cap = INIT_CAP;
+    parser->trans_list_size = 0;
+
+    parser->has_estate = false;
+
+    parser->state_list = (struct dsml_state**) malloc(INIT_CAP * sizeof(struct dsml_state*));
+    parser->input_list = (struct dsml_io**) malloc(INIT_CAP * sizeof(struct dsml_io*));
+    parser->output_list = (struct dsml_io**) malloc(INIT_CAP * sizeof(struct dsml_io*));
+    parser->trans_list = (struct dsml_trans**) malloc(INIT_CAP * sizeof(struct dsml_trans*));
+
+    return DSML_STATUS_SUCCESS;
+}
+
+enum dsml_status dsml_parser_free(struct dsml_parser* parser) {
+    if (parser == NULL) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    for (size_t i = 0; i < parser->state_list_size; i++) {
+        free((char*) parser->state_list[i]->symbol);
+        free(parser->state_list[i]);
+    }
+
+    for (size_t i = 0; i < parser->input_list_size; i++) {
+        free((char*) parser->input_list[i]->symbol);
+        free(parser->input_list[i]);
+    }
+
+    for (size_t i = 0; i < parser->output_list_size; i++) {
+        free((char*) parser->output_list[i]->symbol);
+        free(parser->output_list[i]);
+    }
+
+    for (size_t i = 0; i < parser->trans_list_size; i++) {
+        free(parser->trans_list[i]);
+    }
+
+    free(parser->state_list);
+    free(parser->input_list);
+    free(parser->output_list);
+    free(parser->trans_list);
+
+    parser->state_list = NULL;
+    parser->input_list = NULL;
+    parser->output_list = NULL;
+    parser->trans_list = NULL;
+
+    parser->state_list_size = 0;
+    parser->input_list_size = 0;
+    parser->output_list_size = 0;
+    parser->trans_list_size = 0;
+
+    parser->state_list_cap = 0;
+    parser->input_list_cap = 0;
+    parser->output_list_cap = 0;
+    parser->trans_list_cap = 0;
+
+    return DSML_STATUS_SUCCESS;
+}
+
+enum dsml_lexeme_type dsml_parse_lexeme_keyword(const char* str) {
+    if (str == NULL) {
+        return DSML_LEXEME_UNDEF;
+    }
+
+    if (strcmp(str, DSML_KEYWORDS[DSML_STATE_KEYWORD]) == 0) {
+        return DSML_LEXEME_STATE;
+    }
+    else if (strcmp(str, DSML_KEYWORDS[DSML_INPUT_KEYWORD]) == 0) {
+        return DSML_LEXEME_INPUT;
+    }
+    else if (strcmp(str, DSML_KEYWORDS[DSML_OUTPUT_KEYWORD]) == 0) {
+        return DSML_LEXEME_OUTPUT;
+    }
+    else if (strcmp(str, DSML_KEYWORDS[DSML_TRANS_KEYWORD]) == 0) {
+        return DSML_LEXEME_TRANS;
+    }
+    else {
+        return DSML_LEXEME_UNDEF;
+    }
+}
+
+enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
+    if ((parser == NULL) || (str == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (strlen(str) == 0) {
+        return DSML_STATUS_EMPTY_SYMBOL;
+    }
+
+    char* str_mutable = strdup(str);
+
+    enum dsml_status status = 0;
+    size_t symbol_count = 0;
+    bool is_final = false;
+    bool is_entry = false;
+
+    char* next_symbol = strtok(str_mutable, DSML_SYMBOL_DELIM);
+
+    if (next_symbol == NULL) {
+        status = DSML_STATUS_EMPTY_SYMBOL;
+        goto EXIT;
+    }
+
+    /* Parse 'state' keyword modificators */
+    for (int i = 0; i < 2; i++) {
+        if (strcmp(next_symbol, DSML_KEYWORDS[DSML_FINAL_KEYWORD]) == 0) {
+            if (!is_final) {
+                is_final = true;
+                next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
+            }
+            else {
+                status = DSML_STATUS_REDEF_KEYWORD;
+                goto EXIT;
+            }
+        }
+        else if (strcmp(next_symbol, DSML_KEYWORDS[DSML_ENTRY_KEYWORD]) == 0) {
+            if (!is_entry) {
+                if (parser->has_estate) {
+                    status = DSML_STATUS_MULT_ESTATE;
+                    goto EXIT;
+                }
+                else {
+                    is_entry = true;
+                    next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
+                }
+            }
+            else {
+                status = DSML_STATUS_REDEF_KEYWORD;
+                goto EXIT;
+            }
+        }
+        else {
+            break;
+        }
+
+        if (next_symbol == NULL) {
+            break;
+        }
+    }
+
+    /* Parse state symbols */
+    while (next_symbol != NULL) {
+        symbol_count++;
+
+        if (!dsml_validate_symbol(next_symbol)) {
+            status = DSML_STATUS_INVAL_SYMBOL;
+            goto EXIT;
+        }
+
+        if (dsml_symbol_exists(parser, next_symbol, DSML_LEXEME_STATE)) {
+            status = DSML_STATUS_REDEF_SYMBOL;
+            goto EXIT;
+        }
+
+        dsml_add_state(parser, next_symbol, is_final, is_entry);
+        next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
+    }
+
+    if (symbol_count == 0) {
+        status = DSML_STATUS_EMPTY_SYMBOL;
+    }
+
+EXIT:
+
+    free(str_mutable);
+    return status;
+}
+
+enum dsml_status dsml_parse_io(struct dsml_parser* parser, const char* str, bool is_input) {
+    if ((parser == NULL) || (str == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (strlen(str) == 0) {
+        return DSML_STATUS_EMPTY_SYMBOL;
+    }
+
+    char* str_mutable = strdup(str);
+
+    enum dsml_status status = 0;
+    size_t symbol_count = 0;
+    enum  dsml_lexeme_type lexeme_type = is_input ? DSML_LEXEME_INPUT : DSML_LEXEME_OUTPUT;
+
+    char* next_symbol = strtok(str_mutable, DSML_SYMBOL_DELIM);
+
+    if (next_symbol == NULL) {
+        status = DSML_STATUS_EMPTY_SYMBOL;
+        goto EXIT;
+    }
+
+    /* Parse io symbols */
+    while (next_symbol != NULL) {
+        symbol_count++;
+
+        if (!dsml_validate_symbol(next_symbol)) {
+            status = DSML_STATUS_INVAL_SYMBOL;
+            goto EXIT;
+        }
+
+        if (dsml_symbol_exists(parser, next_symbol, lexeme_type)) {
+            status = DSML_STATUS_REDEF_SYMBOL;
+            goto EXIT;
+        }
+
+        if (is_input) {
+            dsml_add_input(parser, next_symbol);
+        }
+        else {
+            dsml_add_output(parser, next_symbol);
+        }
+
+        next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
+    }
+
+    if (symbol_count == 0) {
+        status = DSML_STATUS_EMPTY_SYMBOL;
+    }
+
+EXIT:
+
+    free(str_mutable);
+    return status;
+}
+
+enum dsml_status dsml_parse_trans(struct dsml_parser* parser, const char* str) {
+    if ((parser == NULL) || (str == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (strlen(str) == 0) {
+        return DSML_STATUS_INVAL_PARAM;;
+    }
+
+    char* str_mutable = strdup(str);
+    char* str_mutable_tail_ptr = str_mutable + strlen(str_mutable) + 1;
+
+    enum dsml_status status = 0;
+    char buffer[MAX_STRING_LEN + 1] = { 0 };
+    const size_t buffer_size = MAX_STRING_LEN + 1;
+
+    char* next_symbol = strtok(str_mutable, DSML_TRANS_DELIM);
+
+    /* From State symbol */
+    struct dsml_state* from_state = NULL;
+
+    if (next_symbol != NULL) {
+        status = dsml_trim_symbol(next_symbol, buffer, buffer_size);
+
+        if (status != DSML_STATUS_SUCCESS) {
+            goto EXIT;
+        }
+
+        from_state = dsml_get_entity(parser, buffer, DSML_LEXEME_STATE);
+
+        if (from_state == NULL) {
+            status = DSML_STATUS_UNDEF_SYMBOL;
+            goto EXIT;
+        }
+    }
+    else {
+        status = DSML_STATUS_INVAL_PARAM_NUM;
+        goto EXIT;
+    }
+
+    next_symbol = strtok(NULL, DSML_TRANS_DELIM);
+
+    /* Input symbols */
+    struct dsml_io** inputs = (struct dsml_io**) malloc(parser->input_list_size * sizeof(struct dsml_io*));
+    size_t input_count = 0;
+    char* backup_ptr = NULL;
+    
+    if (next_symbol != NULL) {
+        backup_ptr = next_symbol + strlen(next_symbol) + 1;
+        if (backup_ptr == str_mutable_tail_ptr) {
+            status = DSML_STATUS_INVAL_PARAM_NUM;
+            goto EXIT;
+        }
+
+        char* input_symbol_list = strdup(next_symbol);
+        char* input_symbol = strtok(input_symbol_list, DSML_SYMBOL_DELIM);
+        struct dsml_io* input = NULL;
+
+        while (input_symbol != NULL) {
+            if ((input = dsml_get_entity(parser, input_symbol, DSML_LEXEME_INPUT)) == NULL) {
+                status = DSML_STATUS_UNDEF_SYMBOL;
+                free(input_symbol_list);
+                goto EXIT;
+            }
+            else {
+                /* Check if input symbol was already used */
+                for (size_t i = 0; i < input_count; i++) {
+                    if (strcmp(input_symbol, inputs[i]->symbol) == 0) {
+                        status = DSML_STATUS_REDEF_SYMBOL;
+                        free(input_symbol_list);
+                        goto EXIT;
+                    }
+                }
+
+                /* Check if transition with this From State and Input was already defined */
+                if (dsml_get_trans(parser, from_state->symbol, input_symbol) != NULL) {
+                    status = DSML_STATUS_INDETERM_TRANS;
+                    free(input_symbol_list);
+                    goto EXIT;
+                }
+
+                inputs[input_count++] = input;
+                input_symbol = strtok(input_symbol_list, DSML_SYMBOL_DELIM);
+            }
+        }
+
+        free(input_symbol_list);
+
+        if (input_count == 0) {
+            status = DSML_STATUS_EMPTY_SYMBOL;
+            goto EXIT;
+        }
+    }
+    else {
+        status = DSML_STATUS_INVAL_PARAM_NUM;
+        goto EXIT;
+    }
+
+    next_symbol = strtok(backup_ptr, DSML_TRANS_DELIM);
+
+    /* To State */
+    struct dsml_state* to_state = NULL;
+
+    if (next_symbol != NULL) {
+        status = dsml_trim_symbol(next_symbol, buffer, buffer_size);
+
+        if (status != DSML_STATUS_SUCCESS) {
+            goto EXIT;
+        }
+
+        to_state = dsml_get_entity(parser, buffer, DSML_LEXEME_STATE);
+
+        if (to_state == NULL) {
+            status = DSML_STATUS_UNDEF_SYMBOL;
+            goto EXIT;
+        }
+    }
+    else {
+        status = DSML_STATUS_INVAL_PARAM_NUM;
+        goto EXIT;
+    }
+
+    next_symbol = strtok(backup_ptr, DSML_TRANS_DELIM);
+
+    /* Output */
+    struct dsml_io* output = NULL;
+
+    if (next_symbol != NULL) {
+        status = dsml_trim_symbol(next_symbol, buffer, buffer_size);
+
+        if (status != DSML_STATUS_SUCCESS) {
+            goto EXIT;
+        }
+
+        /* Check if Output is Empty Output */
+        if (strcmp(buffer, DSML_EMPTY_OUTPUT_SYMBOL) != 0) {
+            output = dsml_get_entity(parser, buffer, DSML_LEXEME_OUTPUT);
+
+            if (output == NULL) {
+                status = DSML_STATUS_UNDEF_SYMBOL;
+                goto EXIT;
+            }
+        }
+    }
+    else {
+        status = DSML_STATUS_INVAL_PARAM_NUM;
+        goto EXIT;
+    }
+    
+    /* Create new Transition(s) */
+    for (size_t i = 0; i < input_count; i++) {
+        struct dsml_trans* new_trans = (struct dsml_trans*) malloc(sizeof(struct dsml_trans));
+
+        new_trans->from_state = from_state;
+        new_trans->input = inputs[i];
+        new_trans->to_state = to_state;
+        new_trans->output = output;
+
+        status = dsml_add_trans(parser, new_trans);
+        if (status != DSML_STATUS_SUCCESS) {
+            break;
+        }
+    }
+
+EXIT:
+
+    free(str_mutable);
+    free(inputs);
+    return status;
+}
+
+enum dsml_status dsml_add_state(struct dsml_parser* parser, const char* symbol, bool is_final, bool is_entry) {
+    if ((parser == NULL) || (symbol == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (parser->state_list_size == parser->state_list_cap) {
+        parser->state_list_cap += CAP_INCR;
+        parser->state_list = 
+            (struct dsml_state**) realloc(parser->state_list, parser->state_list_cap * sizeof(struct dsml_state*));
+    }
+
+    struct dsml_state* new_state = (struct dsml_state*) malloc(sizeof(struct dsml_state));
+    new_state->symbol = strdup(symbol);
+    new_state->is_final = is_final;
+    new_state->is_entry = is_entry;
+    parser->state_list[parser->state_list_size] = new_state;
+    parser->state_list_size++;
+    return DSML_STATUS_SUCCESS;
+}
+
+enum dsml_status dsml_add_input(struct dsml_parser* parser, const char* symbol) {
+    if ((parser == NULL) || (symbol == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (parser->input_list_size == parser->input_list_cap) {
+        parser->input_list_cap += CAP_INCR;
+        parser->input_list = 
+            (struct dsml_io**) realloc(parser->input_list, parser->input_list_cap * sizeof(struct dsml_io*));
+    }
+
+    parser->input_list[parser->input_list_size] = (struct dsml_io*) malloc(sizeof(struct dsml_io));
+    parser->input_list[parser->input_list_size]->symbol = strdup(symbol);
+    parser->input_list_size++;
+    return DSML_STATUS_SUCCESS;
+}
+
+enum dsml_status dsml_add_output(struct dsml_parser* parser, const char* symbol) {
+    if ((parser == NULL) || (symbol == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (parser->output_list_size == parser->output_list_cap) {
+        parser->output_list_cap += CAP_INCR;
+        parser->output_list = 
+            (struct dsml_io**) realloc(parser->output_list, parser->output_list_cap * sizeof(struct dsml_io*));
+    }
+
+    parser->output_list[parser->output_list_size] = (struct dsml_io*) malloc(sizeof(struct dsml_io));
+    parser->output_list[parser->output_list_size]->symbol = strdup(symbol);
+    parser->output_list_size++;
+    return DSML_STATUS_SUCCESS;
+}
+
+enum dsml_status dsml_add_trans(struct dsml_parser* parser, struct dsml_trans* trans) {
+    if ((parser == NULL) || (trans == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (parser->trans_list_size == parser->trans_list_cap) {
+        parser->trans_list_cap += CAP_INCR;
+        parser->trans_list = 
+            (struct dsml_trans**) realloc(parser->trans_list, parser->trans_list_cap * sizeof(struct dsml_trans*));
+    }
+
+    parser->trans_list[parser->trans_list_size++] = trans;
+    return DSML_STATUS_SUCCESS;
+}
+
+bool dsml_validate_symbol(const char* symbol) {
+    if (symbol == NULL) {
+        return false;
+    }
+
+    size_t symbol_len = strlen(symbol);
+
+    /* Check if symbol is alphanumeric */
+    for (size_t i = 0; i < symbol_len; i++) {
+        if (!isalnum(symbol[i])) {
+            return false;
+        }
+    }
+
+    /* Check if symbol is not a DSML keyword */
+    for (size_t i = 0; i < sizeof(DSML_KEYWORDS); i++) {
+        if (strcmp(symbol, DSML_KEYWORDS[i]) == 0) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+enum dsml_status dsml_trim_symbol(const char* symbol, char* buffer, size_t buffer_size) {
+    if ((symbol == NULL) || (buffer == NULL)) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (strlen(symbol) == 0) {
+        return DSML_STATUS_EMPTY_SYMBOL;
+    }
+
+    if (buffer_size == 0) {
+        return DSML_STATUS_INVAL_PARAM;
+    }
+
+    size_t symbol_len = strlen(symbol);
+    size_t c_count = 0;
+
+    if (symbol_len >= buffer_size) {
+        return DSML_STATUS_INVAL_PARAM;
+    }
+
+    const char* c_ptr_front = symbol;
+    while ((*c_ptr_front != '\0') && isspace(*c_ptr_front)) {
+        c_ptr_front++;
+    }
+
+    if (*c_ptr_front == '\0') {
+        goto EXIT;
+    }
+
+    const char* c_ptr_back = symbol + strlen(symbol) - 1;
+    while ((c_ptr_back != symbol) && !isspace(*c_ptr_back)) {
+        c_ptr_back--;
+    }
+
+    do {
+        buffer[c_count++] = *c_ptr_front;
+        c_ptr_front++;
+    } while (c_ptr_front != c_ptr_back);
+
+EXIT:
+
+    buffer[c_count] = '\0';
+    return DSML_STATUS_SUCCESS;
+}
+
+bool dsml_symbol_exists(struct dsml_parser* parser, const char* symbol, enum dsml_lexeme_type type) {
+    assert((parser != NULL) && (symbol != NULL));
+    assert((type != DSML_LEXEME_TRANS) && (type != DSML_LEXEME_UNDEF));
+
+    bool exists = false;
+
+    switch (type) {
+    case DSML_LEXEME_STATE:
+        for (size_t i = 0; i < parser->state_list_size; i++) {
+            if (strcmp(symbol, parser->state_list[i]->symbol) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        break;
+
+    case DSML_LEXEME_INPUT:
+        for (size_t i = 0; i < parser->input_list_size; i++) {
+            if (strcmp(symbol, parser->input_list[i]->symbol) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        break;
+
+    case DSML_LEXEME_OUTPUT:
+        for (size_t i = 0; i < parser->output_list_size; i++) {
+            if (strcmp(symbol, parser->output_list[i]->symbol) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        break;
+    
+    default:
+        break;
+    }
+
+    return exists;
+}
+
+void* dsml_get_entity(struct dsml_parser* parser, const char* symbol, enum dsml_lexeme_type type) {
+    assert((parser != NULL) && (symbol != NULL));
+    assert((type != DSML_LEXEME_TRANS) && (type != DSML_LEXEME_UNDEF));
+
+    void* entity_ptr = NULL;
+
+    switch (type) {
+    case DSML_LEXEME_STATE:
+        for (size_t i = 0; i < parser->state_list_size; i++) {
+            if (strcmp(symbol, parser->state_list[i]->symbol) == 0) {
+                entity_ptr = (void*) parser->state_list[i];
+                break;
+            }
+        }
+        break;
+
+    case DSML_LEXEME_INPUT:
+        for (size_t i = 0; i < parser->input_list_size; i++) {
+            if (strcmp(symbol, parser->input_list[i]->symbol) == 0) {
+                entity_ptr = (void*) parser->state_list[i];
+                break;
+            }
+        }
+        break;
+
+    case DSML_LEXEME_OUTPUT:
+        for (size_t i = 0; i < parser->output_list_size; i++) {
+            if (strcmp(symbol, parser->output_list[i]->symbol) == 0) {
+                entity_ptr = (void*) parser->state_list[i];
+                break;
+            }
+        }
+        break;
+    
+    default:
+        break;
+    }
+
+    return entity_ptr;
+}
+
+struct dsml_trans* dsml_get_trans(struct dsml_parser* parser, const char* from_state_symbol, const char* input_symbol) {
+    assert((parser != NULL) && (from_state_symbol != NULL) && (input_symbol != NULL));
+
+    struct dsml_trans* trans_ptr = NULL;
+
+    for (size_t i = 0; i < parser->trans_list_size; i++) {
+        if ((strcmp(parser->trans_list[i]->from_state->symbol, from_state_symbol) == 0) &&
+            (strcmp(parser->trans_list[i]->input->symbol, from_state_symbol) == 0))
+        {
+            trans_ptr = parser->trans_list[i];
+            break;
+        }
+    }
+
+    return trans_ptr;
+}
+
+const char* dsml_status_message(enum dsml_status status) {
+    const char* message = NULL;
+
+    switch (status) {
+    case DSML_STATUS_SUCCESS:
+        message = "Success";
+        break;
+    case DSML_STATUS_NULL_PARAM:
+        message = "Runtime error: Passed parameter is NULL pointer";
+        break;
+    case DSML_STATUS_INVAL_PARAM:
+        message = "Runtime error: Passed parameter is invalid";
+        break;
+    case DSML_STATUS_EMPTY_SYMBOL:
+        message = "Syntax error: Entity symbol is empty or absent";
+        break;
+    case DSML_STATUS_INVAL_SYMBOL:
+        message = "Syntax error: Entity symbol is invalid. Please, use only alphanumerical characters";
+        break;
+    case DSML_STATUS_UNDEF_SYMBOL:
+        message = "Syntax error: Undefined entity symbol is referenced";
+        break;
+    case DSML_STATUS_REDEF_SYMBOL:
+        message = "Syntax error: Entity symbol is redefined";
+        break;
+    case DSML_STATUS_UNDEF_KEYWORD:
+        message = "Syntax error: Undefined keyword";
+        break;
+    case DSML_STATUS_REDEF_KEYWORD:
+        message = "Syntax error: Incorrect usage of keyword";
+        break;
+    case DSML_STATUS_INVAL_PARAM_NUM:
+        message = "Syntax error: Incorrect number of parameters in the statement";
+        break;
+    case DSML_STATUS_INVAL_SYMBOL_NUM:
+        message = "Syntax error: Incorrect number of entity symbols in the statement";
+        break;
+    case DSML_STATUS_MULT_ESTATE:
+        message = "DSM error: Multiple entry states";
+        break;
+    case DSML_STATUS_INDETERM_TRANS:
+        message = "DSM error: Indetermined transition";
+        break;
+    case DSML_STATUS_UNDEF_ERROR:
+        message = "Unknown error";
+        break;
+    default:
+        message = "No information";
+        break;
+    }
+
+    return message;
+}
+
+#ifndef NDEBUG
+
+void dsml_print_parser(struct dsml_parser* parser) {
+    if (parser == NULL) {
+        return;
+    }
+
+    printf("\nParser Symbols:\n");
+
+    for (uint32_t i = 0; i < (uint32_t) parser->state_list_size; i++) {
+        printf("\tState %u: %s\n", i + 1, parser->state_list[i]->symbol);
+    }
+
+    printf("\n");
+
+    for (uint32_t i = 0; i < (uint32_t) parser->input_list_size; i++) {
+        printf("\tInput %u: %s\n", i + i, parser->input_list[i]->symbol);
+    }
+
+    printf("\n");
+
+    for (uint32_t i = 0; i < (uint32_t) parser->output_list_size; i++) {
+        printf("\tOutput %u: %s\n", i + i, parser->output_list[i]->symbol);
+    }
+
+    printf("\n");
+
+    for (uint32_t i = 0; i < (uint32_t) parser->trans_list_size; i++) {
+        printf("\tTransition %u:\n", i + 1);
+        printf("\t\tFrom State: %s\n", parser->trans_list[i]->from_state->symbol);
+        printf("\t\tInput: %s\n", parser->trans_list[i]->input->symbol);
+        printf("\t\tTo State: %s\n", parser->trans_list[i]->output->symbol);
+        printf("\t\tOutput: %s\n", parser->trans_list[i]->to_state->symbol);
+    }
+
+    printf("\n");
+}
+
+#endif /* !NDEBUG */
