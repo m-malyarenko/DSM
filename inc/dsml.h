@@ -160,6 +160,13 @@ struct dsml_trans {
 
 /* Function Definitions -----------------------------------------------------*/
 
+/* Interface Functions */
+
+/**
+ * 
+ */
+struct dsml_parser* dsml_parse_script(const char* filename);
+
 /* Initialisation/Destruction of Structures */
 
 /**

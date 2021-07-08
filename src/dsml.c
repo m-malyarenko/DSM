@@ -7,6 +7,108 @@
 #include "dsml.h"
 #include "util.h"
 
+struct dsml_parser* dsml_parse_script(const char* filename) {
+    if (filename == NULL) {
+        fprintf(stderr, "Script filename is NULL\n");
+        return NULL;
+    }
+
+    FILE* fin = fopen(filename, "r");
+
+    if (fin == NULL) {
+        perror("Failed to open script file");
+        return NULL;
+    }
+
+    struct dsml_parser* parser = (struct dsml_parser*) malloc(sizeof(struct dsml_parser));
+    enum dsml_status status = dsml_parser_init(parser);
+
+    if (status != DSML_STATUS_SUCCESS) {
+        fprintf(stderr, "Failed to create parser: %s\n", dsml_status_message(status));
+        return NULL;
+    }
+
+    char buffer[MAX_STRING_LEN + 1] = { 0 };
+    unsigned int line_count = 1;
+
+    while (fgets(buffer, MAX_STRING_LEN, fin) != NULL) {
+        char* newline_char_ptr = NULL;
+
+        /* Zero-out newline character */
+        if ((newline_char_ptr = strchr(buffer, '\n')) != NULL) {
+            *newline_char_ptr = '\0';
+        }
+
+        /* Check if string is blank */
+        if (is_blank(buffer) || (strlen(buffer) == 0)) {
+            continue;
+        }
+
+        char* next_string = strdup(buffer);
+        char* keyword = strtok(next_string, DSML_SYMBOL_DELIM);
+
+        if (strcmp(next_string, keyword) == 0) {
+            fprintf(stderr, "Expected expression at line %u\n", line_count);
+            free(next_string);
+            goto PARSER_ERROR;
+        }
+
+        char* lexeme = next_string + strlen(keyword) + 1;
+        enum dsml_lexeme_type lexeme_type = dsml_parse_lexeme_keyword(keyword);
+
+        switch (lexeme_type) {
+        case DSML_LEXEME_STATE:
+            status = dsml_parse_state(parser, lexeme);
+            break;
+
+        case DSML_LEXEME_INPUT:
+            status = dsml_parse_io(parser, lexeme, true);
+            break;  
+
+        case DSML_LEXEME_OUTPUT:
+            status = dsml_parse_io(parser, lexeme, false);
+            break;
+
+        case DSML_LEXEME_TRANS:
+            status = dsml_parse_trans(parser, lexeme);
+            break;
+
+        default:
+            fprintf(stderr, "Unknown keyword at line %u\n", line_count);
+            free(next_string);
+            goto PARSER_ERROR;
+            break;
+        }
+
+        if (status != DSML_STATUS_SUCCESS) {
+            fprintf(stderr, "Error at line %u: %s\n", line_count, dsml_status_message(status));
+            free(next_string);
+            goto PARSER_ERROR;
+        }
+
+        free(next_string);
+    }
+
+    if (feof(fin)) {
+        fprintf(stdout, "Script is parsed successfully\n");
+        fclose(fin);
+        return parser;
+    }
+    else if (ferror(fin)) {
+        perror("Failed to read from the script file");
+    }
+    else {
+        fprintf(stderr, "Failed to read from the script file: Unknown error\n");
+    }
+
+PARSER_ERROR:
+
+    fclose(fin);
+    dsml_parser_free(parser);
+    free(parser);
+    return NULL;
+}
+
 enum dsml_status dsml_parser_init(struct dsml_parser* parser) {
     if (parser == NULL) {
         return DSML_STATUS_NULL_PARAM;
