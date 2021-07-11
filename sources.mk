@@ -1,3 +1,2 @@
-SOURCES = main.c \
-          dsml.c \
+SOURCES = dsml.c \
 		  util.c

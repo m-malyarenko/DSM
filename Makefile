@@ -1,6 +1,6 @@
 include sources.mk
 
-OS = WINDOWS
+PLATFORM = WINDOWS
 BUILD_TYPE = DEBUG
 TARGET_NAME = dsm
 
@@ -22,16 +22,17 @@ else
 $(error Build type undefined. Possible types: DEBUG, RELEASE)
 endif
 
-CCFLAGS = -Wall -Wpedantic -ggdb -std=c11 -I $(INC_DIR)
-CPPFLAGS = $(CPP_DEFINE:%=-D %)
-
-ifeq ($(OS), LINUX)
+ifeq ($(PLATFORM), LINUX)
 CLEAN = rm -f build/obj/* build/bin/* 
-else ifeq ($(OS), WINDOWS)
+else ifeq ($(PLATFORM), WINDOWS)
 CLEAN = del /Q build\bin\* build\obj\*
 else
 $(error Platform type undefined. Possible types: LINUX, WINDOWS)
 endif
+
+CCFLAGS = -Wall -Wpedantic -std=c11 -I $(INC_DIR)
+CPPFLAGS = -D PLATFORM=$(PLATFORM) $(CPP_DEFINE:%=-D %)
+ARFLAGS = rcs
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) -c $(CPPFLAGS) $(CCFLAGS) -o $@ $<
@@ -44,7 +45,7 @@ build-bin: $(OBJECTS)
 # Build library
 PHONY: build-lib
 build-lib: $(OBJECTS)
-	$(AR) rcs $(BIN_DIR)/lib$(TARGET_NAME).a $^
+	$(AR) $(ARFLAGS) $(BIN_DIR)/lib$(TARGET_NAME).a $^
 
 PHONY: clean
 clean:
