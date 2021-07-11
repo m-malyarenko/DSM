@@ -9,14 +9,14 @@
 
 struct dsml_parser* dsml_parse_script(const char* filename) {
     if (filename == NULL) {
-        fprintf(stderr, "Script filename is NULL\n");
+        fprintf(stderr, "DSML> ERROR: Script filename is NULL\n");
         return NULL;
     }
 
     FILE* fin = fopen(filename, "r");
 
     if (fin == NULL) {
-        perror("Failed to open script file");
+        perror("DSML> ERROR: Failed to open script file");
         return NULL;
     }
 
@@ -24,14 +24,15 @@ struct dsml_parser* dsml_parse_script(const char* filename) {
     enum dsml_status status = dsml_parser_init(parser);
 
     if (status != DSML_STATUS_SUCCESS) {
-        fprintf(stderr, "Failed to create parser: %s\n", dsml_status_message(status));
+        fprintf(stderr, "DSML> ERROR: Failed to create parser: %s\n", dsml_status_message(status));
         return NULL;
     }
 
     char buffer[MAX_STRING_LEN + 1] = { 0 };
-    unsigned int line_count = 1;
+    unsigned int line_count = 0;
 
     while (fgets(buffer, MAX_STRING_LEN, fin) != NULL) {
+        line_count++;
         char* newline_char_ptr = NULL;
 
         /* Zero-out newline character */
@@ -44,11 +45,16 @@ struct dsml_parser* dsml_parse_script(const char* filename) {
             continue;
         }
 
+        /* Check if string is comment */
+        if (dsml_is_comment(buffer)) {
+            continue;
+        }
+
         char* next_string = strdup(buffer);
         char* keyword = strtok(next_string, DSML_SYMBOL_DELIM);
 
-        if (strcmp(next_string, keyword) == 0) {
-            fprintf(stderr, "Expected expression at line %u\n", line_count);
+        if (strlen(buffer) == strlen(keyword)) {
+            fprintf(stderr, "DSML> ERROR at line %u: Expected expression\n", line_count);
             free(next_string);
             goto PARSER_ERROR;
         }
@@ -74,14 +80,14 @@ struct dsml_parser* dsml_parse_script(const char* filename) {
             break;
 
         default:
-            fprintf(stderr, "Unknown keyword at line %u\n", line_count);
+            fprintf(stderr, "DSML> ERROR at line %u: Unknown keyword\n", line_count);
             free(next_string);
             goto PARSER_ERROR;
             break;
         }
 
         if (status != DSML_STATUS_SUCCESS) {
-            fprintf(stderr, "Error at line %u: %s\n", line_count, dsml_status_message(status));
+            fprintf(stderr, "DSML> ERROR at line %u: %s\n", line_count, dsml_status_message(status));
             free(next_string);
             goto PARSER_ERROR;
         }
@@ -90,15 +96,22 @@ struct dsml_parser* dsml_parse_script(const char* filename) {
     }
 
     if (feof(fin)) {
-        fprintf(stdout, "Script is parsed successfully\n");
-        fclose(fin);
-        return parser;
+        status = dsml_validate_dsm(parser);
+
+        if (status == DSML_STATUS_SUCCESS) {
+            fprintf(stdout, "DSML> Script is parsed successfully\n");
+            fclose(fin);
+            return parser;
+        }
+        else {
+            fprintf(stderr, "DSML> ERROR: %s\n", dsml_status_message(status));
+        }
     }
     else if (ferror(fin)) {
-        perror("Failed to read from the script file");
+        perror("DSML> ERROR: Failed to read from the script file");
     }
     else {
-        fprintf(stderr, "Failed to read from the script file: Unknown error\n");
+        fprintf(stderr, "DSML> ERROR: Failed to read from the script file: Unknown error\n");
     }
 
 PARSER_ERROR:
@@ -217,7 +230,6 @@ enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
     char* str_mutable = strdup(str);
 
     enum dsml_status status = 0;
-    size_t symbol_count = 0;
     bool is_final = false;
     bool is_entry = false;
 
@@ -243,11 +255,12 @@ enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
         else if (strcmp(next_symbol, DSML_KEYWORDS[DSML_ENTRY_KEYWORD]) == 0) {
             if (!is_entry) {
                 if (parser->has_estate) {
-                    status = DSML_STATUS_MULT_ESTATE;
+                    status = DSML_STATUS_MULT_ENTRY;
                     goto EXIT;
                 }
                 else {
                     is_entry = true;
+                    parser->has_estate = true;
                     next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
                 }
             }
@@ -265,9 +278,16 @@ enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
         }
     }
 
+    size_t symbol_count = 0;
+
     /* Parse state symbols */
     while (next_symbol != NULL) {
         symbol_count++;
+
+        if (is_entry && (symbol_count > 1)) {
+            status = DSML_STATUS_MULT_ENTRY;
+            goto EXIT;
+        }
 
         if (!dsml_validate_symbol(next_symbol)) {
             status = DSML_STATUS_INVAL_SYMBOL;
@@ -355,7 +375,7 @@ enum dsml_status dsml_parse_trans(struct dsml_parser* parser, const char* str) {
     }
 
     if (strlen(str) == 0) {
-        return DSML_STATUS_INVAL_PARAM;;
+        return DSML_STATUS_INVAL_PARAM;
     }
 
     char* str_mutable = strdup(str);
@@ -431,7 +451,7 @@ enum dsml_status dsml_parse_trans(struct dsml_parser* parser, const char* str) {
                 }
 
                 inputs[input_count++] = input;
-                input_symbol = strtok(input_symbol_list, DSML_SYMBOL_DELIM);
+                input_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
             }
         }
 
@@ -471,7 +491,7 @@ enum dsml_status dsml_parse_trans(struct dsml_parser* parser, const char* str) {
         goto EXIT;
     }
 
-    next_symbol = strtok(backup_ptr, DSML_TRANS_DELIM);
+    next_symbol = strtok(NULL, DSML_TRANS_DELIM);
 
     /* Output */
     struct dsml_io* output = NULL;
@@ -483,7 +503,7 @@ enum dsml_status dsml_parse_trans(struct dsml_parser* parser, const char* str) {
             goto EXIT;
         }
 
-        /* Check if Output is Empty Output */
+        /* Check if Output is not an Empty Output */
         if (strcmp(buffer, DSML_EMPTY_OUTPUT_SYMBOL) != 0) {
             output = dsml_get_entity(parser, buffer, DSML_LEXEME_OUTPUT);
 
@@ -604,7 +624,7 @@ bool dsml_validate_symbol(const char* symbol) {
     }
 
     /* Check if symbol is not a DSML keyword */
-    for (size_t i = 0; i < sizeof(DSML_KEYWORDS); i++) {
+    for (size_t i = 0; i < DSML_KEYWORDS_NUM; i++) {
         if (strcmp(symbol, DSML_KEYWORDS[i]) == 0) {
             return false;
         }
@@ -642,8 +662,8 @@ enum dsml_status dsml_trim_symbol(const char* symbol, char* buffer, size_t buffe
         goto EXIT;
     }
 
-    const char* c_ptr_back = symbol + strlen(symbol) - 1;
-    while ((c_ptr_back != symbol) && !isspace(*c_ptr_back)) {
+    const char* c_ptr_back = symbol + strlen(symbol);
+    while (((c_ptr_back - 1) != c_ptr_front) && isspace(*(c_ptr_back - 1))) {
         c_ptr_back--;
     }
 
@@ -718,7 +738,7 @@ void* dsml_get_entity(struct dsml_parser* parser, const char* symbol, enum dsml_
     case DSML_LEXEME_INPUT:
         for (size_t i = 0; i < parser->input_list_size; i++) {
             if (strcmp(symbol, parser->input_list[i]->symbol) == 0) {
-                entity_ptr = (void*) parser->state_list[i];
+                entity_ptr = (void*) parser->input_list[i];
                 break;
             }
         }
@@ -727,7 +747,7 @@ void* dsml_get_entity(struct dsml_parser* parser, const char* symbol, enum dsml_
     case DSML_LEXEME_OUTPUT:
         for (size_t i = 0; i < parser->output_list_size; i++) {
             if (strcmp(symbol, parser->output_list[i]->symbol) == 0) {
-                entity_ptr = (void*) parser->state_list[i];
+                entity_ptr = (void*) parser->output_list[i];
                 break;
             }
         }
@@ -747,7 +767,7 @@ struct dsml_trans* dsml_get_trans(struct dsml_parser* parser, const char* from_s
 
     for (size_t i = 0; i < parser->trans_list_size; i++) {
         if ((strcmp(parser->trans_list[i]->from_state->symbol, from_state_symbol) == 0) &&
-            (strcmp(parser->trans_list[i]->input->symbol, from_state_symbol) == 0))
+            (strcmp(parser->trans_list[i]->input->symbol, input_symbol) == 0))
         {
             trans_ptr = parser->trans_list[i];
             break;
@@ -755,6 +775,64 @@ struct dsml_trans* dsml_get_trans(struct dsml_parser* parser, const char* from_s
     }
 
     return trans_ptr;
+}
+
+enum dsml_status dsml_validate_dsm(struct dsml_parser* parser) {
+    if (parser == NULL) {
+        return DSML_STATUS_NULL_PARAM;
+    }
+
+    if (parser->state_list_size == 0) {
+        return DSML_STATUS_EMPTY_DSM;
+    }
+
+    if (!parser->has_estate) {
+        return DSML_STATUS_NO_ENTRY;
+    }
+
+    if (parser->input_list_size == 0) {
+        return DSML_STATUS_STATIC_DSM;
+    }
+
+    bool is_dsm_determined = true;
+    const char* state_symbol = NULL;
+
+    for (size_t i = 0; i < parser->state_list_size; i++) {
+        state_symbol = parser->state_list[i]->symbol;
+
+        for (size_t j = 0; j < parser->input_list_size; j++) {
+            const char* input_symbol = parser->input_list[j]->symbol;
+
+            if (dsml_get_trans(parser, state_symbol, input_symbol) == NULL) {
+                is_dsm_determined = false;
+                goto EXIT_CYCLE;
+            }
+        }
+    }
+
+EXIT_CYCLE:
+
+    if (!is_dsm_determined) {
+        fprintf(stderr, "Not all input reactions for the state '%s' are defined\n", state_symbol);
+        return DSML_STATUS_INDETERM_TRANS;
+    }
+
+    return DSML_STATUS_SUCCESS;
+}
+
+bool dsml_is_comment(const char* str) {
+    if (str == NULL) {
+        return false;
+    }
+
+    if (strlen(str) == 0) {
+        return false;
+    }
+
+    char buffer[MAX_STRING_LEN + 1] = { 0 };
+    dsml_trim_symbol(str, buffer, MAX_STRING_LEN);
+
+    return buffer[0] == '#';
 }
 
 const char* dsml_status_message(enum dsml_status status) {
@@ -794,8 +872,17 @@ const char* dsml_status_message(enum dsml_status status) {
     case DSML_STATUS_INVAL_SYMBOL_NUM:
         message = "Syntax error: Incorrect number of entity symbols in the statement";
         break;
-    case DSML_STATUS_MULT_ESTATE:
+    case DSML_STATUS_NO_ENTRY:
+        message = "DSM error: Entry state is not declared";
+        break;
+    case DSML_STATUS_MULT_ENTRY:
         message = "DSM error: Multiple entry states";
+        break;
+    case DSML_STATUS_EMPTY_DSM:
+        message = "DSM error: DSM is empty (no states declared)";
+        break;
+    case DSML_STATUS_STATIC_DSM:
+        message = "DSM error: DSM is static (no inputs declared)";
         break;
     case DSML_STATUS_INDETERM_TRANS:
         message = "DSM error: Indetermined transition";
@@ -813,7 +900,7 @@ const char* dsml_status_message(enum dsml_status status) {
 
 #ifndef NDEBUG
 
-void dsml_print_parser(struct dsml_parser* parser) {
+void dsml_parser_print(struct dsml_parser* parser) {
     if (parser == NULL) {
         return;
     }
@@ -821,19 +908,29 @@ void dsml_print_parser(struct dsml_parser* parser) {
     printf("\nParser Symbols:\n");
 
     for (uint32_t i = 0; i < (uint32_t) parser->state_list_size; i++) {
-        printf("\tState %u: %s\n", i + 1, parser->state_list[i]->symbol);
+        printf("\tState %u: %s ", i + 1, parser->state_list[i]->symbol);
+
+        if (parser->state_list[i]->is_entry) {
+            printf("entry ");
+        }
+
+        if (parser->state_list[i]->is_final) {
+            printf("final");
+        }
+
+        printf("\n");
     }
 
     printf("\n");
 
     for (uint32_t i = 0; i < (uint32_t) parser->input_list_size; i++) {
-        printf("\tInput %u: %s\n", i + i, parser->input_list[i]->symbol);
+        printf("\tInput %u: %s\n", i + 1, parser->input_list[i]->symbol);
     }
 
     printf("\n");
 
     for (uint32_t i = 0; i < (uint32_t) parser->output_list_size; i++) {
-        printf("\tOutput %u: %s\n", i + i, parser->output_list[i]->symbol);
+        printf("\tOutput %u: %s\n", i + 1, parser->output_list[i]->symbol);
     }
 
     printf("\n");
@@ -842,8 +939,13 @@ void dsml_print_parser(struct dsml_parser* parser) {
         printf("\tTransition %u:\n", i + 1);
         printf("\t\tFrom State: %s\n", parser->trans_list[i]->from_state->symbol);
         printf("\t\tInput: %s\n", parser->trans_list[i]->input->symbol);
-        printf("\t\tTo State: %s\n", parser->trans_list[i]->output->symbol);
-        printf("\t\tOutput: %s\n", parser->trans_list[i]->to_state->symbol);
+        printf("\t\tTo State: %s\n", parser->trans_list[i]->to_state->symbol);
+        if (parser->trans_list[i]->output == NULL) {
+             printf("\t\tOutput: -\n");
+        }
+        else {
+            printf("\t\tOutput: %s\n", parser->trans_list[i]->output->symbol);
+        }
     }
 
     printf("\n");

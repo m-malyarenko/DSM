@@ -1,0 +1,23 @@
+# DSM №1 Лучший Конечный автомат в мире
+# Автор: Михаил Маляренко
+# Дата: 10.07.2021
+# Цель: Просто попробовать возможности парсера
+
+input a b c
+
+state entry final s0
+state final s1
+state s2
+
+output y z
+
+trans s0 : a b : s1 : y
+trans s0 : c : s2 : -
+trans s2 : c : s1 : y
+
+trans s1 : a : s0 : z
+trans s1 : b c : s2 : y
+
+trans s2 : b : s0 : z
+
+trans s2 : a : s0 : -

@@ -50,6 +50,11 @@ static const char* DSML_EMPTY_OUTPUT_SYMBOL = "-";
 /**
  * @def
  */
+#define DSML_KEYWORDS_NUM ((size_t) 6)
+
+/**
+ * @def
+ */
 #define INIT_CAP            ((size_t) 5)
 #define CAP_INCR            ((size_t) 5)
 #define MAX_STRING_LEN      ((size_t) 255)
@@ -101,7 +106,10 @@ enum dsml_status {
     DSML_STATUS_REDEF_KEYWORD,
     DSML_STATUS_INVAL_PARAM_NUM,
     DSML_STATUS_INVAL_SYMBOL_NUM,
-    DSML_STATUS_MULT_ESTATE,
+    DSML_STATUS_NO_ENTRY,
+    DSML_STATUS_MULT_ENTRY,
+    DSML_STATUS_EMPTY_DSM,
+    DSML_STATUS_STATIC_DSM,
     DSML_STATUS_INDETERM_TRANS,
     DSML_STATUS_UNDEF_ERROR,
 };
@@ -253,12 +261,12 @@ enum dsml_status dsml_trim_symbol(const char* symbol, char* buffer, size_t buffe
 /**
  * 
  */
-void* dsml_find_by_symbol(struct dsml_parser* parser, const char* symbol, uint8_t type);
+enum dsml_status dsml_validate_dsm(struct dsml_parser* parser);
 
 /**
  * 
  */
-struct dsml_trans* dsml_find_transition(struct dsml_parser* parser, const char* from_symb, const char* input_symb);
+bool dsml_is_comment(const char* str);
 
 /* Error Handling */
 
@@ -271,7 +279,7 @@ const char* dsml_status_message(enum dsml_status status);
 /**
  * 
  */
-void dsml_print_parser(struct dsml_parser* parser);
+void dsml_parser_print(struct dsml_parser* parser);
 
 #endif
 
