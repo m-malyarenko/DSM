@@ -68,17 +68,19 @@ static const char* DSML_EMPTY_OUTPUT_SYMBOL = "-";
 #define TRANS_TO_STATE      ((size_t) 2)
 #define TRANS_OUTPUT        ((size_t) 3)
 
-/**
- * @def
- */
-#define DSML_STATE_KEYWORD  ((size_t) 0)
-#define DSML_FINAL_KEYWORD  ((size_t) 1)
-#define DSML_ENTRY_KEYWORD  ((size_t) 2)
-#define DSML_INPUT_KEYWORD  ((size_t) 3)
-#define DSML_OUTPUT_KEYWORD ((size_t) 4)
-#define DSML_TRANS_KEYWORD  ((size_t) 5)
-
 /* Enum ---------------------------------------------------------------------*/
+
+/**
+ * @enum
+ */
+enum dsml_keyword_index {
+    DSML_STATE_KEYWORD_INDEX,
+    DSML_FINAL_KEYWORD_INDEX,
+    DSML_ENTRY_KEYWORD_INDEX,
+    DSML_INPUT_KEYWORD_INDEX,
+    DSML_OUTPUT_KEYWORD_INDEX,
+    DSML_TRANS_KEYWORD_INDEX,
+};
 
 /**
  * @enum

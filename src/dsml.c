@@ -201,16 +201,16 @@ enum dsml_lexeme_type dsml_parse_lexeme_keyword(const char* str) {
         return DSML_LEXEME_UNDEF;
     }
 
-    if (strcmp(str, DSML_KEYWORDS[DSML_STATE_KEYWORD]) == 0) {
+    if (strcmp(str, DSML_KEYWORDS[DSML_STATE_KEYWORD_INDEX]) == 0) {
         return DSML_LEXEME_STATE;
     }
-    else if (strcmp(str, DSML_KEYWORDS[DSML_INPUT_KEYWORD]) == 0) {
+    else if (strcmp(str, DSML_KEYWORDS[DSML_INPUT_KEYWORD_INDEX]) == 0) {
         return DSML_LEXEME_INPUT;
     }
-    else if (strcmp(str, DSML_KEYWORDS[DSML_OUTPUT_KEYWORD]) == 0) {
+    else if (strcmp(str, DSML_KEYWORDS[DSML_OUTPUT_KEYWORD_INDEX]) == 0) {
         return DSML_LEXEME_OUTPUT;
     }
-    else if (strcmp(str, DSML_KEYWORDS[DSML_TRANS_KEYWORD]) == 0) {
+    else if (strcmp(str, DSML_KEYWORDS[DSML_TRANS_KEYWORD_INDEX]) == 0) {
         return DSML_LEXEME_TRANS;
     }
     else {
@@ -242,7 +242,7 @@ enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
 
     /* Parse 'state' keyword modificators */
     for (int i = 0; i < 2; i++) {
-        if (strcmp(next_symbol, DSML_KEYWORDS[DSML_FINAL_KEYWORD]) == 0) {
+        if (strcmp(next_symbol, DSML_KEYWORDS[DSML_FINAL_KEYWORD_INDEX]) == 0) {
             if (!is_final) {
                 is_final = true;
                 next_symbol = strtok(NULL, DSML_SYMBOL_DELIM);
@@ -252,7 +252,7 @@ enum dsml_status dsml_parse_state(struct dsml_parser* parser, const char* str) {
                 goto EXIT;
             }
         }
-        else if (strcmp(next_symbol, DSML_KEYWORDS[DSML_ENTRY_KEYWORD]) == 0) {
+        else if (strcmp(next_symbol, DSML_KEYWORDS[DSML_ENTRY_KEYWORD_INDEX]) == 0) {
             if (!is_entry) {
                 if (parser->has_estate) {
                     status = DSML_STATUS_MULT_ENTRY;
