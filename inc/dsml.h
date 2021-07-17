@@ -50,23 +50,23 @@ static const char* DSML_EMPTY_OUTPUT_SYMBOL = "-";
 /**
  * @def
  */
-#define DSML_KEYWORDS_NUM ((size_t) 6)
+#define DSML_KEYWORDS_NUM ((int) 6)
 
 /**
  * @def
  */
-#define INIT_CAP            ((size_t) 5)
-#define CAP_INCR            ((size_t) 5)
+#define INIT_CAP            ((int) 5)
+#define CAP_INCR            ((int) 5)
 #define MAX_STRING_LEN      ((size_t) 255)
-#define TRANS_OPERANDS_NUM  ((size_t) 4)
+#define TRANS_OPERANDS_NUM  ((int) 4)
 
 /**
  * @def
  */
-#define TRANS_FROM_STATE    ((size_t) 0)
-#define TRANS_INPUT         ((size_t) 1)
-#define TRANS_TO_STATE      ((size_t) 2)
-#define TRANS_OUTPUT        ((size_t) 3)
+#define TRANS_FROM_STATE    ((int) 0)
+#define TRANS_INPUT         ((int) 1)
+#define TRANS_TO_STATE      ((int) 2)
+#define TRANS_OUTPUT        ((int) 3)
 
 /* Enum ---------------------------------------------------------------------*/
 
@@ -122,17 +122,17 @@ enum dsml_status {
  * @enum 
  */
 struct dsml_parser {
-    size_t state_list_size;
-    size_t state_list_cap;
+    int state_list_size;
+    int state_list_cap;
     
-    size_t input_list_size;
-    size_t input_list_cap;
+    int input_list_size;
+    int input_list_cap;
 
-    size_t output_list_size;
-    size_t output_list_cap;
+    int output_list_size;
+    int output_list_cap;
 
-    size_t trans_list_size;
-    size_t trans_list_cap;
+    int trans_list_size;
+    int trans_list_cap;
 
     bool has_estate;
 
