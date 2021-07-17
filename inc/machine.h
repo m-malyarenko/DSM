@@ -13,10 +13,11 @@
 
 #include <stdint.h>
 
-/* Define -------------------------------------------------------------------*/
-
 /* Enum ---------------------------------------------------------------------*/
 
+/**
+ * @enum 
+ */
 enum machine_status {
     MACHINE_STATUS_SUCCESS,
     MACHINE_STATUS_NULL_PARAM,
